@@ -49,4 +49,4 @@ Full feature list and docs at **https://twira.com**.
 ## Licence
 
 Twira is proprietary software, licensed under the Twira End User Licence
-Agreement, available at https://twira.com/eula.
+Agreement, available at https://twira.com/legal/eula.
