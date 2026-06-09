@@ -13,8 +13,9 @@ One command installs it — no signup, no account, no card.
 ## Install
 
 ```bash
-npm install -g @twira/cli          # npm
-brew install twirahq/tap/twira     # Homebrew
+curl -fsSL https://twira.com/install.sh | sh   # macOS / Linux
+npm install -g @twira/cli                       # npm
+brew install twirahq/tap/twira                  # Homebrew
 ```
 
 One binary, no runtime dependencies. macOS, Linux, and Windows.
@@ -44,9 +45,9 @@ institutional memory, cross-language port migration, a tamper-evident audit
 chain, and an AI Compliance Proxy that redacts PII and secrets before they reach
 the model. Deterministic, local-first, cryptographic where it matters.
 
-Full feature list and docs at **https://twira.com**.
+Full feature list and docs at **https://www.twira.com**.
 
 ## Licence
 
 Twira is proprietary software, licensed under the Twira End User Licence
-Agreement, available at https://twira.com/legal/eula.
+Agreement, available at https://www.twira.com/legal/eula.
