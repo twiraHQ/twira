@@ -135,12 +135,76 @@ download_and_install() {
   echo "Twira ${VERSION} installed to ${INSTALL_DIR}/${BINARY_NAME}"
   echo ""
 
-  configure_path
+  # Make `twira` resolvable. Preferred: a symlink in a directory every
+  # shell already searches — works in THIS terminal immediately, zero
+  # config. Fallback: shell-profile edit + activation line.
+  NEEDS_ACTIVATE=""
+  if link_into_path; then
+    echo "twira is ready to use in this terminal."
+    echo ""
+  else
+    configure_path
+  fi
 
   echo "Get started:"
+  if [ -n "$NEEDS_ACTIVATE" ]; then
+    echo "  source ${NEEDS_ACTIVATE}   # activate in THIS terminal (new terminals won't need it)"
+  fi
   echo "  twira init       # set up Twira in your repo (wires your AI agent)"
   echo "  twira index      # build the local code graph"
   echo "  twira dashboard  # open the dashboard in your browser"
+}
+
+# ── Zero-touch linking ────────────────────────────────────────────────────
+#
+# A child process can never modify the launching shell, so PATH edits only
+# help FUTURE terminals. The seamless route is a symlink in a directory the
+# shell already searches: then `twira` works in the CURRENT terminal, new
+# terminals, scripts and cron alike, with nothing to source.
+#
+#   1. A user-writable candidate already on PATH (Homebrew prefixes,
+#      /usr/local/bin, or $TWIRA_LINK_DIR)  → link silently. Zero touch.
+#   2. /usr/local/bin via ONE polite sudo prompt (interactive runs only —
+#      the same password any .pkg installer asks for).
+#   3. Neither → return 1 and the profile-edit fallback takes over.
+#
+# Always a symlink to ~/.twira/bin/twira, never a copy: updates that
+# replace the real binary propagate through the link automatically.
+
+link_into_path() {
+  LINK_SRC="${INSTALL_DIR}/${BINARY_NAME}"
+
+  for d in "${TWIRA_LINK_DIR:-}" /opt/homebrew/bin /usr/local/bin "$HOME/.local/bin"; do
+    [ -n "$d" ] || continue
+    case ":$PATH:" in
+      *":${d}:"*) ;;
+      *) continue ;;
+    esac
+    [ -d "$d" ] && [ -w "$d" ] || continue
+    if ln -sfn "$LINK_SRC" "${d}/${BINARY_NAME}" 2>/dev/null; then
+      echo "Linked ${d}/${BINARY_NAME} -> ${LINK_SRC}"
+      return 0
+    fi
+  done
+
+  # One sudo attempt, interactive terminals only. /dev/tty works even when
+  # the script itself is piped from curl.
+  case ":$PATH:" in
+    *":/usr/local/bin:"*)
+      if [ -e /dev/tty ] && [ -z "${TWIRA_NO_SUDO:-}" ]; then
+        echo "Linking twira into /usr/local/bin so it works everywhere"
+        echo "(your login password may be requested; Ctrl-C skips this)."
+        if sudo -p "Password: " sh -c "mkdir -p /usr/local/bin && ln -sfn '${LINK_SRC}' '/usr/local/bin/${BINARY_NAME}'" </dev/tty 2>/dev/tty; then
+          echo "Linked /usr/local/bin/${BINARY_NAME} -> ${LINK_SRC}"
+          return 0
+        fi
+        echo "No problem — falling back to a shell-profile entry."
+        echo ""
+      fi
+      ;;
+  esac
+
+  return 1
 }
 
 # ── PATH setup ────────────────────────────────────────────────────────────
@@ -192,10 +256,10 @@ configure_path() {
     printf '\n%s\n' "$EXPORT_LINE" >> "$PROFILE"
     echo "Added Twira to your PATH in ${PROFILE}."
   fi
-  echo ""
-  echo "This terminal doesn't have it yet — open a NEW terminal,"
-  echo "or run:  source ${PROFILE}"
-  echo ""
+  # Tell the Get started block to lead with the activation line — a child
+  # process cannot modify the parent shell, and field testing (2026-06-12,
+  # twice) shows eyes skip any standalone "open a new terminal" paragraph.
+  NEEDS_ACTIVATE="$PROFILE"
 }
 
 # ── Banner ───────────────────────────────────────────────────────────────
