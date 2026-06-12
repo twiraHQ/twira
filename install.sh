@@ -17,8 +17,9 @@ detect_platform() {
     Linux)   OS_NAME="unknown-linux-gnu" ;;
     Darwin)  OS_NAME="apple-darwin" ;;
     MINGW*|MSYS*|CYGWIN*)
-      echo "Error: Use npm or manual download on Windows." >&2
-      echo "  npm install -g @twira/cli" >&2
+      echo "On Windows, run this in PowerShell instead:" >&2
+      echo "  irm twira.com/install.ps1 | iex" >&2
+      echo "(or: npm install -g @twira/cli)" >&2
       exit 1
       ;;
     *)
