@@ -135,27 +135,67 @@ download_and_install() {
   echo "Twira ${VERSION} installed to ${INSTALL_DIR}/${BINARY_NAME}"
   echo ""
 
-  # Check if already in PATH
-  case ":$PATH:" in
-    *":${INSTALL_DIR}:"*) ;;
-    *)
-      echo "Add Twira to your PATH:"
-      echo ""
-      if [ -f "$HOME/.zshrc" ]; then
-        echo "  echo 'export PATH=\"${INSTALL_DIR}:\$PATH\"' >> ~/.zshrc && source ~/.zshrc"
-      elif [ -f "$HOME/.bashrc" ]; then
-        echo "  echo 'export PATH=\"${INSTALL_DIR}:\$PATH\"' >> ~/.bashrc && source ~/.bashrc"
-      else
-        echo "  export PATH=\"${INSTALL_DIR}:\$PATH\""
-      fi
-      echo ""
-      ;;
-  esac
+  configure_path
 
   echo "Get started:"
-  echo "  twira init"
-  echo "  twira index"
-  echo "  twira search \"your query\""
+  echo "  twira init       # set up Twira in your repo (wires your AI agent)"
+  echo "  twira index      # build the local code graph"
+  echo "  twira dashboard  # open the dashboard in your browser"
+}
+
+# ── PATH setup ────────────────────────────────────────────────────────────
+#
+# The installer configures PATH ITSELF (idempotently, in the profile of the
+# user's login shell) rather than printing a command and hoping. Field
+# report 2026-06-12: a fresh install printed the add-to-PATH line followed
+# by "Get started: twira init" — the user ran twira init and got "command
+# not found". The happy path must work without homework.
+# Opt out with TWIRA_NO_MODIFY_PATH=1 (the manual line is printed instead).
+
+configure_path() {
+  # Already reachable → nothing to do.
+  case ":$PATH:" in
+    *":${INSTALL_DIR}:"*) return 0 ;;
+  esac
+
+  EXPORT_LINE="export PATH=\"${INSTALL_DIR}:\$PATH\" # added by the Twira installer"
+
+  if [ -n "${TWIRA_NO_MODIFY_PATH:-}" ]; then
+    echo "TWIRA_NO_MODIFY_PATH is set, so your shell profile was not touched."
+    echo "Add this line to it yourself:"
+    echo ""
+    echo "  ${EXPORT_LINE}"
+    echo ""
+    return 0
+  fi
+
+  # Profile of the user's LOGIN shell — not the shell running this script
+  # (curl | sh runs under sh even for zsh users).
+  case "${SHELL:-}" in
+    */zsh) PROFILE="$HOME/.zshrc" ;;
+    */bash)
+      # macOS terminals start login shells (read .bash_profile); Linux
+      # terminals start interactive non-login shells (read .bashrc).
+      if [ "$(uname -s)" = "Darwin" ]; then
+        PROFILE="$HOME/.bash_profile"
+      else
+        PROFILE="$HOME/.bashrc"
+      fi
+      ;;
+    *) PROFILE="$HOME/.profile" ;;
+  esac
+
+  # Idempotent: one entry, ever, even across re-installs.
+  if [ -f "$PROFILE" ] && grep -qs "${INSTALL_DIR}" "$PROFILE"; then
+    echo "PATH entry already present in ${PROFILE}."
+  else
+    printf '\n%s\n' "$EXPORT_LINE" >> "$PROFILE"
+    echo "Added Twira to your PATH in ${PROFILE}."
+  fi
+  echo ""
+  echo "This terminal doesn't have it yet — open a NEW terminal,"
+  echo "or run:  source ${PROFILE}"
+  echo ""
 }
 
 # ── Banner ───────────────────────────────────────────────────────────────
