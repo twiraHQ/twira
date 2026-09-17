@@ -64,10 +64,55 @@ function Install-Twira {
         Write-Host "${Archive}: OK"
 
         # ── Install ──────────────────────────────────────────────────────
-        Expand-Archive -Path (Join-Path $Tmp $Archive) -DestinationPath $Tmp -Force
+        #
+        # Everything in the archive goes into the install directory, not just
+        # the .exe. The Windows build imports the Visual C++ runtime
+        # (VCRUNTIME140*, MSVCP140*), which ships in the Visual C++
+        # Redistributable rather than in Windows itself — so those DLLs travel
+        # inside the archive and must land next to the binary, where the
+        # loader looks for them. Install only the .exe and Twira will not
+        # start on a machine that has never installed a Visual C++
+        # Redistributable: the loader fails with 0xC0000135 before the program
+        # runs, and nothing is printed at all.
+        #
+        # Extract into a subdirectory so the archive and its checksum file
+        # (both sitting in $Tmp) can never be mistaken for payload.
+        $Extract = Join-Path $Tmp 'unpacked'
+        New-Item -ItemType Directory -Path $Extract -Force | Out-Null
+        Expand-Archive -Path (Join-Path $Tmp $Archive) -DestinationPath $Extract -Force
+
+        $payload = @(Get-ChildItem -Path $Extract -File)
+        if (-not ($payload | Where-Object { $_.Name -eq "$BinaryName.exe" })) {
+            throw "$Archive did not contain $BinaryName.exe."
+        }
+
         New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
-        Move-Item -Path (Join-Path $Tmp "$BinaryName.exe") `
-                  -Destination (Join-Path $InstallDir "$BinaryName.exe") -Force
+
+        # A running twira (an MCP server held open by an editor, a dashboard,
+        # a background watcher) keeps its image mapped, and Windows refuses to
+        # overwrite or delete a mapped file. Renaming it aside is always
+        # allowed, and frees the name for the new copy; the stale .old is
+        # swept on the next install once nothing holds it.
+        Get-ChildItem -Path $InstallDir -Filter '*.old' -File -ErrorAction SilentlyContinue |
+            ForEach-Object { Remove-Item $_.FullName -Force -ErrorAction SilentlyContinue }
+
+        foreach ($file in $payload) {
+            $dest = Join-Path $InstallDir $file.Name
+            if (Test-Path $dest) {
+                try {
+                    Remove-Item $dest -Force -ErrorAction Stop
+                }
+                catch {
+                    Rename-Item -Path $dest -NewName "$($file.Name).old" -Force -ErrorAction Stop
+                }
+            }
+            Move-Item -Path $file.FullName -Destination $dest -Force
+        }
+
+        $extras = @($payload | Where-Object { $_.Name -ne "$BinaryName.exe" })
+        if ($extras.Count -gt 0) {
+            Write-Host "Installed $($extras.Count) runtime $(if ($extras.Count -eq 1) { 'library' } else { 'libraries' }) alongside the binary."
+        }
     }
     finally {
         Remove-Item -Recurse -Force $Tmp -ErrorAction SilentlyContinue
@@ -99,7 +144,36 @@ function Install-Twira {
     if (($env:Path -split ';') -notcontains $InstallDir) {
         $env:Path = "$InstallDir;$env:Path"
     }
-    Write-Host 'twira is ready to use in this terminal.'
+
+    # Prove the install before claiming it works. The one failure this cannot
+    # talk its way past is a missing runtime: the process never starts, so
+    # there is no output and no exit code from Twira itself. Say what that
+    # means rather than leaving the user with a bare loader error.
+    $installed = Join-Path $InstallDir "$BinaryName.exe"
+    $reported = $null
+    $startFailure = $null
+    try {
+        # A process that cannot start raises a terminating error under
+        # $ErrorActionPreference = 'Stop' rather than returning an exit code,
+        # so both outcomes have to be handled.
+        $reported = (& $installed --version 2>&1) -join ' '
+        if ($LASTEXITCODE -ne 0) { $startFailure = $reported }
+    }
+    catch {
+        $startFailure = $_.Exception.Message
+    }
+
+    if ($startFailure) {
+        Write-Host ''
+        Write-Host 'Twira was downloaded and verified, but the binary would not start:'
+        Write-Host "  $startFailure"
+        Write-Host ''
+        Write-Host 'Please report this at https://github.com/TwiraHQ/twira/issues with'
+        Write-Host "the message above, your Windows version, and $Target."
+        return
+    }
+
+    Write-Host "$reported is ready to use in this terminal."
     Write-Host ''
 
     Write-Host 'Get started:'
